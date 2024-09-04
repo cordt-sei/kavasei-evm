@@ -7,6 +7,9 @@ This backend service provides APIs to bridge EVM-based USDT tokens from the Kava
 - **Bridge Tokens**: Transfer EVM-based tokens from Kava EVM to the Cosmos side.
 - **Convert EVM Address to Sei Address**: Use Sei's RPC to convert EVM addresses to Sei native addresses.
 - **IBC Transfer**: Perform IBC transfers to another IBC-enabled chain.
+- **Logging**: Structured logging using `winston` for better observability and debugging.
+- **Error Handling**: Improved error handling and specific status codes for different types of errors.
+- **Rate Limiting**: Protects APIs against abuse by limiting the number of requests per time window.
 
 ## Prerequisites
 
@@ -127,21 +130,42 @@ Run the tests using:
 npm test
 ```
 
+### Test Coverage
+
+- Tests cover core functionalities such as token bridging, address conversion, and IBC transfers.
+- Edge cases for input validation and network failures are also tested.
+
 ## Deployment
 
 To deploy the backend on a server:
 
-1. Set environment variables as per your environment.
-2. Run `node dist/index.js`.
+1. **Set environment variables** as per your environment.
+2. Build the Docker image:
+
+   ```bash
+   docker build -t kava-bridge-backend .
+   ```
+
+3. Run the Docker container:
+
+   ```bash
+   docker run -d -p 3000:3000 --env-file .env kava-bridge-backend
+   ```
 
 ## Troubleshooting
 
 - **Connection Errors**: Ensure the RPC endpoints are accessible and correctly configured.
 - **Transaction Errors**: Check the input parameters and ensure the addresses, amounts, and denominations are valid.
+- **Network Failures**: Implement retries and ensure network connectivity is stable.
 
 ## Contributing
 
 Feel free to submit pull requests or open issues for any bugs or feature requests.
+
+## Security
+
+- Sensitive information like mnemonics should be handled securely. Consider using environment variables and secure storage practices.
+- Always validate and sanitize inputs to prevent injection attacks.
 
 ## License
 
