@@ -1,10 +1,10 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit'; // Rate limiting middleware
+import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import logger from './utils/logger';
 import { bridgeTokens, ibcTransfer } from './services/kavaBridgeService';
 import { convertEvmToSeiAddress } from './services/seiAddressService';
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -12,14 +12,14 @@ app.use(express.json());
 
 // Rate limiting to prevent abuse
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
 });
 app.use(limiter);
 
-// Middleware for logging
+// Logging middleware
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
+  logger.info(`Received ${req.method} request for ${req.url}`);
   next();
 });
 
@@ -32,7 +32,7 @@ app.post('/bridge', async (req, res) => {
     const txHash = await bridgeTokens(evmAddress, cosmosRecipientAddress, amount, denom);
     res.json({ txHash });
   } catch (error) {
-    console.error(error);
+    logger.error(`Error in /bridge: ${error.message}`);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -46,7 +46,7 @@ app.post('/convert-address', async (req, res) => {
     const seiAddress = await convertEvmToSeiAddress(evmAddress);
     res.json({ seiAddress });
   } catch (error) {
-    console.error(error);
+    logger.error(`Error in /convert-address: ${error.message}`);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -60,12 +60,12 @@ app.post('/ibc-transfer', async (req, res) => {
     await ibcTransfer(mnemonic, sourceAddress, destinationAddress, amount, denom, channel);
     res.json({ status: 'IBC transfer successful' });
   } catch (error) {
-    console.error(error);
+    logger.error(`Error in /ibc-transfer: ${error.message}`);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  logger.info(`Server is running on port ${PORT}`);
 });
