@@ -1,14 +1,13 @@
 import * as grpc from 'grpc';
 import * as protoLoader from '@grpc/proto-loader';
-import { ethers } from 'ethers';
 import { DirectSecp256k1HdWallet, SigningStargateClient } from '@cosmjs/stargate';
 import axios from 'axios';
+import logger from '../utils/logger';
 
 // Constants
-const KAVA_GRPC_URL = 'kava.grpc.io:9090'; // Replace with actual Kava gRPC endpoint
-const SEI_RPC_URL = 'https://sei-chain-rpc-url'; // Replace with actual Sei RPC endpoint
+const KAVA_GRPC_URL = process.env.KAVA_GRPC_URL!;
+const SEI_RPC_URL = process.env.SEI_RPC_URL!;
 
-// Load the gRPC proto file
 const PROTO_PATH = __dirname + '/../grpc/kava.proto';
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: true,
@@ -19,38 +18,48 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 });
 const evmultiProto = grpc.loadPackageDefinition(packageDefinition).evmulti;
 
-// Function to construct the transaction for bridging tokens from Kava EVM to Cosmos
+// Utility to create gRPC client
+function createGrpcClient() {
+  return new evmultiProto.Evmulti(KAVA_GRPC_URL, grpc.credentials.createInsecure());
+}
+
+// Function to retry network requests
+async function retryRequest<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      logger.warn(`Attempt ${attempt} failed: ${error.message}`);
+      if (attempt === retries) {
+        throw error;
+      }
+    }
+  }
+  throw new Error('Max retries reached');
+}
+
 export async function bridgeTokens(
   evmAddress: string,
   cosmosRecipientAddress: string,
   amount: string,
   denom: string
 ): Promise<string> {
-  // Create a gRPC client for the evmulti module
-  const client = new evmultiProto.Evmulti(KAVA_GRPC_URL, grpc.credentials.createInsecure());
-
-  // Prepare the MsgSend message for bridging tokens
-  const msgSend = {
-    from_address: evmAddress,
-    to_address: cosmosRecipientAddress,
-    amount: [{ denom, amount }],
-  };
+  const client = createGrpcClient();
+  const msgSend = { from_address: evmAddress, to_address: cosmosRecipientAddress, amount: [{ denom, amount }] };
 
   return new Promise((resolve, reject) => {
-    // Broadcast the MsgSend transaction to bridge tokens
     client.MsgSend(msgSend, (error: grpc.ServiceError, response: any) => {
       if (error) {
-        console.error('Error while bridging tokens:', error.message);
+        logger.error(`gRPC Error: ${error.message}`);
         return reject(error);
       }
-
-      console.log('Bridge transaction successful:', response);
+      logger.info(`Bridge transaction successful: ${response.tx_hash}`);
       resolve(response.tx_hash);
     });
   });
 }
 
-// Function to perform IBC transfer to another IBC-enabled chain
+// IBC function
 export async function ibcTransfer(
   mnemonic: string,
   sourceAddress: string,
@@ -71,7 +80,7 @@ export async function ibcTransfer(
       token: { denom, amount },
       sender: sourceAddress,
       receiver: destinationAddress,
-      timeout_height: { revision_number: 0, revision_height: 100 }, // Adjust as necessary
+      timeout_height: { revision_number: 0, revision_height: 100 },
       timeout_timestamp: 0,
     },
   };
@@ -79,9 +88,9 @@ export async function ibcTransfer(
   const ibcResult = await ibcClient.signAndBroadcast(
     firstAccount.address,
     [ibcMsg],
-    'auto', // Automatically calculate gas
-    [{ denom: 'ukava', amount: '2000' }] // Adjust fees as needed
+    'auto',
+    [{ denom: 'ukava', amount: '2000' }]
   );
 
-  console.log('IBC transfer successful:', ibcResult);
+  logger.info(`IBC transfer successful: ${ibcResult.transactionHash}`);
 }
