@@ -107,7 +107,6 @@ The server will start on `http://localhost:3000`.
    - **Request Body**:
      ```json
      {
-       "mnemonic": "your mnemonic here",
        "sourceAddress": "kava1sourceaddress",
        "destinationAddress": "cosmos1destinationaddress",
        "amount": "1000000",
