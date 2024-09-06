@@ -24,70 +24,61 @@ function createGrpcClient() {
   return new evmultiProto.Evmulti(KAVA_GRPC_URL, grpc.credentials.createInsecure());
 }
 
-// Main function to handle USDT transfer from Kava EVM to Sei
-export async function transferUsdtToSei(
+// Main function to handle combined transaction
+export async function combinedTransferUsdtToSei(
   evmAddress: string,
   cosmosRecipientAddress: string,
   seiAddress: string,
   amount: string
 ): Promise<string> {
-  // Step 1: Convert ERC20 USDT to Kava native tokens
-  const client = createGrpcClient();
+  // Initialize wallet for signing
+  const mnemonic = process.env.KAVA_MNEMONIC!;
+  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, { prefix: 'kava' });
+  const [firstAccount] = await wallet.getAccounts();
+  const ibcClient = await SigningStargateClient.connectWithSigner(KAVA_GRPC_URL, wallet);
 
+  // Construct the first message: Convert ERC20 USDT to Kava Cosmos tokens
   const convertMsg = {
-    type: 'evmutil/MsgConvertERC20ToCoin',
+    typeUrl: '/kava.evmutil.v1beta1.MsgConvertERC20ToCoin',
     value: {
       initiator: evmAddress,
       receiver: cosmosRecipientAddress,
-      kava_erc20_address: '0xUSDT_CONTRACT_ADDRESS', // Replace with actual USDT ERC20 contract address
+      kavaErc20Address: '0xUSDT_CONTRACT_ADDRESS', // Replace with actual USDT ERC20 contract address
       amount: amount,
     },
   };
 
+  // Construct the second message: Perform IBC transfer from Kava to Sei
+  const ibcMsg = {
+    typeUrl: '/ibc.applications.transfer.v1.MsgTransfer',
+    value: {
+      source_port: 'transfer',
+      source_channel: 'channel-132', // Replace with actual channel ID
+      token: { denom: 'erc20/tether/usdt', amount },
+      sender: cosmosRecipientAddress,
+      receiver: seiAddress,
+      timeout_height: { revision_number: 0, revision_height: 100 }, // Adjust as needed
+      timeout_timestamp: 0,
+    },
+  };
+
+  // Combine both messages into a single transaction
+  const combinedMessages = [convertMsg, ibcMsg];
+
   try {
-    const convertResponse = await new Promise((resolve, reject) => {
-      client.MsgConvertERC20ToCoin(convertMsg, (error: grpc.ServiceError, response: any) => {
-        if (error) {
-          logger.error('Error converting USDT from Kava EVM to Kava Cosmos:', error.message);
-          return reject(error);
-        }
-
-        logger.info('USDT converted successfully:', response);
-        resolve(response.tx_hash);
-      });
-    });
-
-    // Step 2: Perform IBC transfer from Kava to Sei
-    const mnemonic = process.env.KAVA_MNEMONIC!;
-    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, { prefix: 'kava' });
-    const [firstAccount] = await wallet.getAccounts();
-    const ibcClient = await SigningStargateClient.connectWithSigner(KAVA_GRPC_URL, wallet);
-
-    const ibcMsg = {
-      typeUrl: '/ibc.applications.transfer.v1.MsgTransfer',
-      value: {
-        source_port: 'transfer',
-        source_channel: 'channel-132', // Replace with actual channel ID
-        token: { denom: 'erc20/tether/usdt', amount },
-        sender: cosmosRecipientAddress,
-        receiver: seiAddress,
-        timeout_height: { revision_number: 0, revision_height: 100 }, // Adjust as needed
-        timeout_timestamp: 0,
-      },
-    };
-
-    const ibcResult = await ibcClient.signAndBroadcast(
+    // Sign and broadcast the combined transaction
+    const result = await ibcClient.signAndBroadcast(
       firstAccount.address,
-      [ibcMsg],
-      'auto',
-      [{ denom: 'ukava', amount: '2000' }] // Adjust fee as necessary
+      combinedMessages,
+      'auto', // Automatically calculate gas
+      [{ denom: 'ukava', amount: '2000' }] // Adjust fees as needed
     );
 
-    logger.info('IBC transfer successful:', ibcResult);
-    return ibcResult.transactionHash;
+    logger.info('Combined transaction successful:', result);
+    return result.transactionHash;
 
   } catch (error) {
-    logger.error('Error during transfer from Kava EVM to Sei:', error.message);
+    logger.error('Error during combined transaction from Kava EVM to Sei:', error.message);
     throw error;
   }
 }
