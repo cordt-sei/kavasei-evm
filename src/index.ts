@@ -7,7 +7,7 @@ app.post('/bridge', async (req, res) => {
 
     const cosmosRecipientAddress = convertEvmToSeiAddress(evmAddress); // Convert EVM to Cosmos address
 
-    const txHash = await transferUsdtToSei(evmAddress, cosmosRecipientAddress, seiAddress, amount);
+    const txHash = await combinedTransferUsdtToSei(evmAddress, cosmosRecipientAddress, seiAddress, amount);
     res.json({ txHash });
 
   } catch (error) {
